@@ -135,6 +135,41 @@ async def cmd_status(message: Message):
 @router.callback_query(F.data == "start_anketa")
 async def start_anketa_flow(event: Message | CallbackQuery, state: FSMContext):
     await state.clear()
+    user_id = event.from_user.id
+
+    # Проверка лимитов для обычных пользователей (не админов)
+    if user_id not in ADMIN_IDS:
+        sub = await db.get_active_subscription(user_id)
+        has_paid_quota = sub and sub["reviews_used"] < sub["reviews_total"]
+
+        if not has_paid_quota:
+            last_created = await db.get_last_free_submission(user_id)
+            if last_created:
+                from datetime import datetime, timedelta
+                try:
+                    dt = datetime.strptime(last_created[:19], "%Y-%m-%d %H:%M:%S")
+                except Exception:
+                    dt = datetime.utcnow()
+
+                unlock_dt = dt + timedelta(days=7)
+                if datetime.utcnow() < unlock_dt:
+                    unlock_str = unlock_dt.strftime("%d.%m в %H:%M UTC")
+                    limit_text = (
+                        "⏳ *Бесплатный лимит исчерпан*\n\n"
+                        "Ты уже отправил(а) ситуацию на этой неделе (лимит — 1 бесплатная анкета в 7 дней). "
+                        "Это правило помогает мне сохранять свежую голову и глубоко погружаться в каждый случай.\n\n"
+                        f"🗓 Следующая бесплатная анкета откроется: *{unlock_str}*.\n\n"
+                        "💎 Если ситуация срочная и тебе нужен *гарантированный ответ лично от меня в течение 48 часов* — "
+                        "оформи разовый разбор или подписку (3 разбора в месяц, всегда первые в очереди)."
+                    )
+                    limit_kb = kb.final_anketa_keyboard()
+                    if isinstance(event, CallbackQuery):
+                        await event.message.edit_text(limit_text, reply_markup=limit_kb, parse_mode="Markdown")
+                        await event.answer()
+                    else:
+                        await event.answer(limit_text, reply_markup=limit_kb, parse_mode="Markdown")
+                    return
+
     text = (
         "📋 *Вопрос 1 из 4: Что происходит*\n\n"
         "Опиши, что происходит, с кем и как давно. Без долгой предыстории, но обязательно с эмоциями — это важно: то, как ты себя чувствуешь в этой ситуации, помогает раскрыть её суть.\n\n"

@@ -110,6 +110,18 @@ async def use_subscription_review(user_id: int):
             return new_used, sub["reviews_total"]
     return None
 
+async def get_last_free_submission(user_id: int):
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute("""
+            SELECT created_at FROM submissions
+            WHERE user_id = ? AND is_subscriber = 0
+            ORDER BY id DESC LIMIT 1
+        """, (user_id,)) as cursor:
+            row = await cursor.fetchone()
+            if row:
+                return row[0]
+            return None
+
 async def save_submission(user_id: int, situaciya: str, popytki: str, vopros: str, tema: str, is_subscriber: bool = False):
     async with aiosqlite.connect(DB_PATH) as db:
         cursor = await db.execute("""
